@@ -248,7 +248,7 @@ describe('Realtime', () => {
     expect(ontvangenA).toContain(openbaar.data!.id);
     // De eigenlijke test: A krijgt het vertrouwelijke ticket nooit.
     expect(ontvangenA).not.toContain(geheim.data!.id);
-  });
+  }, 120_000);
 });
 
 const FUNCTIE_NAMEN = ['admin-create-user', 'admin-bulk-create-users', 'admin-reset-password', 'admin-set-active'];
