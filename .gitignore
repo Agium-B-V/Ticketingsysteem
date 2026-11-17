@@ -17,6 +17,9 @@ supabase/.branches/
 # Lokale testdatabase
 .tmp/
 
+# Lokale tool-instellingen (bevatten lokale paden)
+.claude/
+
 # Editor en OS
 .vscode/*
 !.vscode/extensions.json

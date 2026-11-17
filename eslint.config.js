@@ -18,6 +18,11 @@ export default tseslint.config(
     },
   },
   {
+    // Context-bestanden exporteren bewust ook hooks en hulpfuncties.
+    files: ['src/lib/**/*.tsx'],
+    rules: { 'react-refresh/only-export-components': 'off' },
+  },
+  {
     files: ['scripts/**/*.mjs'],
     extends: [js.configs.recommended],
     languageOptions: { globals: globals.node },

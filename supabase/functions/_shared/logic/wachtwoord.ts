@@ -37,5 +37,9 @@ export function genereerWachtwoord(lengte: number = STANDAARD_LENGTE): string {
     const j = willekeurig(i + 1);
     [tekens[i], tekens[j]] = [tekens[j]!, tekens[i]!];
   }
+  // Begin altijd met een letter: een wachtwoord dat met =, +, - of @ begint
+  // wordt in Excel als formule gelezen wanneer het overzicht als CSV wordt geopend.
+  const eersteLetter = tekens.findIndex((t) => /[A-Za-z]/.test(t));
+  if (eersteLetter > 0) [tekens[0], tekens[eersteLetter]] = [tekens[eersteLetter]!, tekens[0]!];
   return tekens.join('');
 }

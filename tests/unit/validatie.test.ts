@@ -96,6 +96,7 @@ describe('tijdelijk wachtwoord', () => {
       expect(w).toMatch(/[2-9]/);
       expect(w).toMatch(/[!@#$%*\-_+=?]/);
       expect(w).not.toMatch(/[0O1lI]/);
+      expect(w).toMatch(/^[A-Za-z]/);
     }
   });
 
