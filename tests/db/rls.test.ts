@@ -337,7 +337,8 @@ describe('Beheer: alleen IT-admins', () => {
   });
 
   it('admin_revoke_sessions verwijdert alle sessies van de gebruiker', async () => {
-    await beheer('insert into auth.sessions (user_id) values ($1), ($1)', [B.id]);
+    // In echte Supabase heeft auth.sessions.id geen standaardwaarde.
+    await beheer('insert into auth.sessions (id, user_id) values (gen_random_uuid(), $1), (gen_random_uuid(), $1)', [B.id]);
     await beheer('select public.admin_revoke_sessions($1)', [B.id]);
     const r = await beheer<{ n: number }>('select count(*)::int as n from auth.sessions where user_id = $1', [B.id]);
     expect(r.rows[0]!.n).toBe(0);
