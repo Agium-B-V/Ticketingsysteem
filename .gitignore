@@ -1,0 +1,30 @@
+# Afhankelijkheden en build
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Omgevingsvariabelen en geheimen: nooit committen
+.env
+.env.*
+!.env.example
+supabase/functions/.env
+supabase/.env
+
+# Lokale Supabase
+supabase/.temp/
+supabase/.branches/
+
+# Lokale testdatabase
+.tmp/
+
+# Lokale tool-instellingen (bevatten lokale paden)
+.claude/
+
+# Editor en OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.log
