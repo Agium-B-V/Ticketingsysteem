@@ -66,7 +66,7 @@ De migraties maken ook de teams **Finance (FIN)**, **IT (IT)** en **HR (HR)** aa
 
 In het Supabase-dashboard:
 
-1. *Authentication > Sign In / Providers*: zet **Allow new users to sign up** uit. Zet **Allow anonymous sign-ins** uit. Laat alleen **Email** aan, en zet magic link of OTP niet in de app aan.
+1. *Authentication > Sign In / Providers*: zet **Allow new users to sign up** uit. Zet **Allow anonymous sign-ins** uit. Laat alleen **Email** aan, en zet magic link of OTP niet in de app aan. Laat **Confirm email** en **Secure email change** aan, zodat niemand zelf zijn login-e-mailadres kan wijzigen.
 2. *Authentication > Sign In / Providers > Email* (of *Authentication > Policies*, afhankelijk van de dashboardversie): stel **Minimum password length** in op **12**.
 3. **Leaked password protection** (controle tegen gelekte wachtwoorden): zet deze aan als je plan dat toelaat. Op Free is dit niet beschikbaar.
 4. *Authentication > URL Configuration*: zet **Site URL** op je GitHub Pages-URL (bijvoorbeeld `https://agium-b-v.github.io/Ticketingsysteem/`) en voeg die ook toe bij **Redirect URLs**.

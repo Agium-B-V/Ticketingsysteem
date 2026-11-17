@@ -81,6 +81,7 @@ let A: Gebruiker;
 let B: Gebruiker;
 let finHandler: Gebruiker;
 let itAdmin: Gebruiker;
+let finAdmin: Gebruiker;
 let bVertrouwelijk: { id: string; number: string };
 let bOpenbaar: { id: string; number: string };
 
@@ -91,6 +92,7 @@ beforeAll(async () => {
   B = await maakGebruiker('medewerker.b');
   finHandler = await maakGebruiker('handler.finance', [{ team: FIN, rol: 'handler' }]);
   itAdmin = await maakGebruiker('admin.it', [{ team: IT, rol: 'admin' }]);
+  finAdmin = await maakGebruiker('admin.finance', [{ team: FIN, rol: 'admin' }]);
 
   const v = await B.client
     .from('tickets')
@@ -109,7 +111,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  for (const g of [A, B, finHandler, itAdmin]) await g?.client.removeAllChannels();
+  for (const g of [A, B, finHandler, itAdmin, finAdmin]) await g?.client.removeAllChannels();
 });
 
 describe('REST zonder inlog (anon key)', () => {
@@ -257,6 +259,11 @@ describe('Edge Functions: autorisatie', () => {
     expect(r.status).toBe(403);
   });
 
+  it.each(FUNCTIE_NAMEN)('%s geeft 403 voor een admin van een ander team dan IT', async (f) => {
+    const r = await roepAan(f, { user_id: B.id, active: false }, finAdmin.token);
+    expect(r.status).toBe(403);
+  });
+
   it('weigert een niet-toegestane origin en staat de ingestelde origin toe', async () => {
     const fout = await roepAan('admin-create-user', {}, itAdmin.token, 'https://evil.example.org');
     expect(fout.status).toBe(403);
@@ -331,10 +338,15 @@ describe('Edge Functions: accountbeheer door een IT-admin', () => {
 
     const uit = await roepAan('admin-set-active', { user_id: nieuwId, active: false }, itAdmin.token);
     expect(uit.status).toBe(200);
-    for (const t of ['tickets', 'profiles', 'team_members', 'ticket_counts']) {
+    for (const t of ['tickets', 'profiles', 'team_members', 'ticket_counts', 'ticket_comments']) {
       const r = await g.client.from(t).select('*');
       expect(r.data ?? [], t).toEqual([]);
     }
+    const toegang = await g.client.rpc('has_access');
+    expect(toegang.data).not.toBe(true);
+    // De sessie is ingetrokken: verversen van het token lukt niet meer.
+    const ververs = await g.client.auth.refreshSession();
+    expect(ververs.error).not.toBeNull();
     const teams = await g.client.from('teams').select('id');
     expect(teams.data ?? []).toEqual([]);
     await expect(login(email, `Weer-${run}-anders-Cc3!`)).rejects.toBeTruthy();

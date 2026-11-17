@@ -3,7 +3,9 @@
 
 export type TeamRol = 'handler' | 'admin';
 
-export const MAX_BULK = 200;
+// Per aanroep; de app knipt grotere bestanden op in porties, zodat een aanroep
+// ruim binnen de tijdslimiet van een Edge Function blijft.
+export const MAX_BULK = 50;
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;

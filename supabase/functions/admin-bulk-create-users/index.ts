@@ -1,5 +1,5 @@
 // Maakt meerdere accounts aan (uit een CSV die de app omzet naar JSON).
-// Invoer: { users: [{ email, full_name, team_prefix?, role? }] } (max 200)
+// Invoer: { users: [{ email, full_name, team_prefix?, role? }] } (max 50 per aanroep)
 // Uitvoer per regel: gelukt/mislukt met reden, en bij succes het tijdelijke
 // wachtwoord (alleen in dit antwoord; nergens opgeslagen).
 

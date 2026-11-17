@@ -28,18 +28,17 @@ create table public.teams (
   id uuid primary key default gen_random_uuid(),
   name text not null,
   prefix text not null,
-  -- Volgnummer voor niet-vertrouwelijke tickets (FIN-0001).
+  -- Volgnummer voor niet-vertrouwelijke tickets (FIN-0001). Vertrouwelijke
+  -- tickets krijgen een willekeurig nummer (FIN-V-3F9A1C27), zodat noch gaten
+  -- in de openbare reeks noch een eigen volgnummer hun aantal verraden.
   ticket_counter integer not null default 0,
-  -- Aparte reeks voor vertrouwelijke tickets (FIN-V-0001), zodat gaten in de
-  -- openbare nummering het bestaan van vertrouwelijke tickets niet verraden.
-  confidential_counter integer not null default 0,
   -- Precies één team is het beheerteam (IT). Alleen via een migratie te zetten.
   is_admin_team boolean not null default false,
   active boolean not null default true,
   created_at timestamptz not null default now(),
   constraint teams_name_length check (char_length(btrim(name)) between 1 and 80),
   constraint teams_prefix_format check (prefix ~ '^[A-Z]{2,6}$'),
-  constraint teams_counters_positive check (ticket_counter >= 0 and confidential_counter >= 0),
+  constraint teams_counter_positive check (ticket_counter >= 0),
   constraint teams_prefix_unique unique (prefix)
 );
 
@@ -131,7 +130,9 @@ revoke all on private.password_snapshots from public;
 --    Deze functies geven uitsluitend informatie over de ingelogde aanroeper.
 -- ---------------------------------------------------------------------------
 
--- Is het account van de aanroeper actief?
+-- Is het account van de aanroeper actief? Wijkt het login-e-mailadres in
+-- auth.users af van het profiel (bijvoorbeeld via een zelf gewijzigd adres
+-- buiten het bedrijfsdomein), dan telt het account als niet actief.
 create or replace function public.is_active()
 returns boolean
 language sql
@@ -140,7 +141,11 @@ security definer
 set search_path = ''
 as $$
   select coalesce(
-    (select p.active from public.profiles p where p.id = (select auth.uid())),
+    (select p.active
+       from public.profiles p
+       join auth.users u on u.id = p.id
+      where p.id = (select auth.uid())
+        and lower(u.email) = p.email),
     false
   );
 $$;
@@ -156,7 +161,9 @@ as $$
   select coalesce(
     (select p.active and not p.must_change_password
        from public.profiles p
-      where p.id = (select auth.uid())),
+       join auth.users u on u.id = p.id
+      where p.id = (select auth.uid())
+        and lower(u.email) = p.email),
     false
   );
 $$;
@@ -246,6 +253,61 @@ as $$
         created_at = now();
 $$;
 
+-- Trekt alle sessies (en daarmee refresh tokens) van een gebruiker in, zodat
+-- een eerder buitgemaakte sessie na deactivering of reset niet meer werkt.
+-- Alleen uitvoerbaar door service_role.
+create or replace function public.admin_revoke_sessions(p_user_id uuid)
+returns void
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+begin
+  delete from auth.sessions where user_id = p_user_id;
+end;
+$$;
+
+-- Zet profiles.active voor een gebruiker. Weigert het deactiveren van de
+-- laatste actieve IT-admin; vergrendelt daarvoor de rij van het IT-team zodat
+-- twee gelijktijdige deactiveringen elkaar niet kunnen passeren.
+-- Alleen uitvoerbaar door service_role.
+create or replace function public.admin_set_profile_active(p_user_id uuid, p_active boolean)
+returns void
+language plpgsql
+volatile
+security definer
+set search_path = ''
+as $$
+declare
+  v_admin_team uuid;
+  v_remaining integer;
+begin
+  select t.id into v_admin_team from public.teams t where t.is_admin_team for update;
+
+  if not p_active and exists (
+    select 1 from public.team_members tm
+     where tm.team_id = v_admin_team and tm.user_id = p_user_id and tm.role = 'admin'
+  ) then
+    select count(*) into v_remaining
+      from public.team_members tm
+      join public.profiles p on p.id = tm.user_id
+     where tm.team_id = v_admin_team
+       and tm.role = 'admin'
+       and p.active
+       and tm.user_id <> p_user_id;
+    if v_remaining = 0 then
+      raise exception 'Er moet minimaal één actieve IT-admin overblijven' using errcode = '42501';
+    end if;
+  end if;
+
+  update public.profiles set active = p_active where id = p_user_id;
+  if not found then
+    raise exception 'Gebruiker niet gevonden' using errcode = 'P0002';
+  end if;
+end;
+$$;
+
 -- ---------------------------------------------------------------------------
 -- 4. Triggers
 -- ---------------------------------------------------------------------------
@@ -276,24 +338,26 @@ begin
   end if;
 
   if new.confidential then
-    update public.teams
-       set confidential_counter = confidential_counter + 1
-     where id = new.team_id and active
-    returning prefix, confidential_counter into v_prefix, v_seq;
+    -- Willekeurig nummer: geen volgnummer dat het aantal vertrouwelijke tickets verraadt.
+    select t.prefix into v_prefix from public.teams t where t.id = new.team_id and t.active;
+    if v_prefix is null then
+      raise exception 'Dit team bestaat niet of is niet actief' using errcode = '23503';
+    end if;
+    loop
+      new.number := v_prefix || '-V-' || upper(substr(replace(gen_random_uuid()::text, '-', ''), 1, 8));
+      exit when not exists (select 1 from public.tickets t where t.number = new.number);
+    end loop;
   else
     update public.teams
        set ticket_counter = ticket_counter + 1
      where id = new.team_id and active
     returning prefix, ticket_counter into v_prefix, v_seq;
+    if v_prefix is null then
+      raise exception 'Dit team bestaat niet of is niet actief' using errcode = '23503';
+    end if;
+    new.number := v_prefix || '-'
+      || case when v_seq < 10000 then lpad(v_seq::text, 4, '0') else v_seq::text end;
   end if;
-
-  if v_prefix is null then
-    raise exception 'Dit team bestaat niet of is niet actief' using errcode = '23503';
-  end if;
-
-  new.number := v_prefix
-    || case when new.confidential then '-V-' else '-' end
-    || case when v_seq < 10000 then lpad(v_seq::text, 4, '0') else v_seq::text end;
   new.created_at := now();
   new.updated_at := now();
   new.closed_at := null;
@@ -411,7 +475,8 @@ declare
   v_admin_team uuid;
   v_remaining integer;
 begin
-  select t.id into v_admin_team from public.teams t where t.is_admin_team;
+  -- Vergrendel het IT-team, zodat gelijktijdige wijzigingen elkaar niet passeren.
+  select t.id into v_admin_team from public.teams t where t.is_admin_team for update;
 
   if old.team_id = v_admin_team
      and old.role = 'admin'
@@ -611,10 +676,11 @@ revoke all on all sequences in schema public from anon, authenticated, public;
 revoke execute on all functions in schema public from anon, authenticated, public;
 revoke all on all tables in schema private from anon, authenticated, public;
 
--- ... en voor toekomstige objecten nooit automatisch iets aan anon geven.
-alter default privileges in schema public revoke all on tables from anon;
-alter default privileges in schema public revoke all on sequences from anon;
-alter default privileges in schema public revoke execute on functions from anon, public;
+-- ... en voor toekomstige objecten nooit automatisch iets aan anon of
+-- authenticated geven: elke nieuwe tabel of functie krijgt expliciete grants.
+alter default privileges in schema public revoke all on tables from anon, authenticated;
+alter default privileges in schema public revoke all on sequences from anon, authenticated;
+alter default privileges in schema public revoke execute on functions from anon, authenticated, public;
 
 -- Daarna alleen wat `authenticated` nodig heeft; RLS bepaalt welke rijen.
 grant select (id, name, prefix, is_admin_team, active, created_at) on public.teams to authenticated;

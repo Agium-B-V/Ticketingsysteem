@@ -49,7 +49,8 @@ tests/
 | Risico | Maatregel |
 | --- | --- |
 | Fout in RLS staat na merge direct live (Supabase-GitHub-koppeling) | RLS-testset draait in CI tegen een lokale Supabase; jij merget zelf. |
-| Bestaan van vertrouwelijke tickets lekt via gaten in de nummering of via `ticket_counter` | Aparte nummerreeks voor vertrouwelijke tickets (`FIN-V-0001`); de tellers zijn niet leesbaar voor gebruikers. |
+| Bestaan van vertrouwelijke tickets lekt via gaten in de nummering of via `ticket_counter` | Vertrouwelijke tickets krijgen een willekeurig nummer (`FIN-V-3F9A1C27`); de teller is niet leesbaar voor gebruikers. |
+| Gebruiker wijzigt zijn login-e-mailadres buiten het bedrijfsdomein | `has_access()` vergelijkt `auth.users.email` met het profiel; bij verschil geen toegang. |
 | Gedeactiveerde gebruiker houdt een geldig token | `has_access()` in elke policy en in de Edge Functions. |
 | Uitsluiting doordat de laatste IT-admin wordt verwijderd | Trigger weigert het verwijderen of degraderen van de laatste IT-admin. Zelf-deactivatie is geblokkeerd. |
 | Tijdelijk wachtwoord geeft al toegang tot gegevens | Zolang `must_change_password` aan staat, geeft RLS niets terug behalve het eigen profiel. |

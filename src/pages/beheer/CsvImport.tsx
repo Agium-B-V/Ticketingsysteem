@@ -6,6 +6,7 @@ import { foutTekst } from '../../lib/format';
 import { roepFunctieAan, type BulkResultaat } from '../../lib/functies';
 
 const MAX = 200;
+const PORTIE = 50;
 const MAX_BESTAND = 200 * 1024;
 
 export function CsvImport({ naImport }: { naImport: () => void }) {
@@ -39,16 +40,30 @@ export function CsvImport({ naImport }: { naImport: () => void }) {
     if (!regels) return;
     setBezig(true);
     setFout(null);
+    // Porties van maximaal PORTIE regels per aanroep; resultaten worden samengevoegd.
+    const totaal: BulkResultaat = { resultaten: [], gelukt: 0, mislukt: 0 };
     try {
-      const res = await roepFunctieAan<BulkResultaat>('admin-bulk-create-users', {
-        users: regels.map((r) => ({ email: r.email, full_name: r.full_name, team_prefix: r.team_prefix || undefined, role: r.role || undefined })),
-      });
-      // Regelnummers terugvertalen naar het bestand (kopregel = 1)
-      setResultaat({ ...res, resultaten: res.resultaten.map((x) => ({ ...x, regel: x.regel + 1 })) });
+      for (let start = 0; start < regels.length; start += PORTIE) {
+        const portie = regels.slice(start, start + PORTIE);
+        const res = await roepFunctieAan<BulkResultaat>('admin-bulk-create-users', {
+          users: portie.map((r) => ({ email: r.email, full_name: r.full_name, team_prefix: r.team_prefix || undefined, role: r.role || undefined })),
+        });
+        // Regelnummers terugvertalen naar het bestand
+        totaal.resultaten.push(...res.resultaten.map((x) => ({ ...x, regel: portie[x.regel - 1]?.regel ?? x.regel })));
+        totaal.gelukt += res.gelukt;
+        totaal.mislukt += res.mislukt;
+      }
+      setResultaat(totaal);
       setRegels(null);
       naImport();
     } catch (err) {
-      setFout(foutTekst(err));
+      // Toon wat al wel is aangemaakt (met wachtwoorden), zodat dat niet verloren gaat.
+      if (totaal.resultaten.length > 0) {
+        setResultaat(totaal);
+        setRegels(null);
+        naImport();
+      }
+      setFout(`${foutTekst(err)} Regels na de laatste getoonde regel zijn niet verwerkt.`);
     } finally {
       setBezig(false);
     }
@@ -72,6 +87,7 @@ export function CsvImport({ naImport }: { naImport: () => void }) {
 
   function sluit() {
     setResultaat(null);
+    setFout(null);
     setGedownload(false);
   }
 
@@ -81,6 +97,7 @@ export function CsvImport({ naImport }: { naImport: () => void }) {
       <Kaart aria-labelledby="import-resultaat">
         <div className="stapel">
           <h2 id="import-resultaat">Resultaat van de import</h2>
+          {fout && <Melding variant="aandacht">{fout}</Melding>}
           <div className="rij">
             <Badge variant="positief">{resultaat.gelukt} gelukt</Badge>
             <Badge variant={resultaat.mislukt ? 'aandacht' : 'neutraal'}>{resultaat.mislukt} mislukt</Badge>

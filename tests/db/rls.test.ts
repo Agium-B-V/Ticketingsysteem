@@ -191,7 +191,6 @@ describe('Medewerker A en de tickets van B', () => {
 
   it('kan de tellers van teams niet lezen (die verraden het totaal)', async () => {
     await verwachtGeweigerd(alsGebruiker(A.id, (c) => c.query('select ticket_counter from public.teams')));
-    await verwachtGeweigerd(alsGebruiker(A.id, (c) => c.query('select confidential_counter from public.teams')));
     await verwachtGeweigerd(alsGebruiker(A.id, (c) => c.query('select * from public.teams')));
   });
 
@@ -303,17 +302,21 @@ describe('Beheer: alleen IT-admins', () => {
         where tm.team_id = $1 and tm.role = 'admin' and p.active`,
       [IT],
     );
-    // In een schone testdatabase is itAdmin de enige actieve IT-admin.
-    if (admins.rows[0]!.n === 1) {
-      await verwachtGeweigerd(
-        alsGebruiker(itAdmin.id, (c) => c.query(`delete from public.team_members where user_id = $1 and team_id = $2`, [itAdmin.id, IT])),
-      );
-      await verwachtGeweigerd(
-        alsGebruiker(itAdmin.id, (c) =>
-          c.query(`update public.team_members set role = 'handler' where user_id = $1 and team_id = $2`, [itAdmin.id, IT]),
-        ),
-      );
-    }
+    // De testset draait altijd op een schone database: itAdmin is de enige actieve IT-admin.
+    expect(admins.rows[0]!.n).toBe(1);
+    await verwachtGeweigerd(
+      alsGebruiker(itAdmin.id, (c) => c.query(`delete from public.team_members where user_id = $1 and team_id = $2`, [itAdmin.id, IT])),
+    );
+    await verwachtGeweigerd(
+      alsGebruiker(itAdmin.id, (c) =>
+        c.query(`update public.team_members set role = 'handler' where user_id = $1 and team_id = $2`, [itAdmin.id, IT]),
+      ),
+    );
+    // Ook deactiveren via de functie van de Edge Function weigert de laatste IT-admin.
+    await expect(beheer('select public.admin_set_profile_active($1, false)', [itAdmin.id])).rejects.toMatchObject({ code: '42501' });
+    // Een gewone gebruiker deactiveren en heractiveren werkt wel.
+    await beheer('select public.admin_set_profile_active($1, false)', [finAdmin.id]);
+    await beheer('select public.admin_set_profile_active($1, true)', [finAdmin.id]);
   });
 
   it('een IT-admin ziet alle profielen en lidmaatschappen', async () => {
@@ -325,10 +328,19 @@ describe('Beheer: alleen IT-admins', () => {
     });
   });
 
-  it('admin_snapshot_password is alleen voor service_role', async () => {
+  it('admin-functies (snapshot, sessies intrekken, actief zetten) zijn alleen voor service_role', async () => {
     for (const u of [A, itAdmin]) {
       await verwachtGeweigerd(alsGebruiker(u.id, (c) => c.query(`select public.admin_snapshot_password($1)`, [u.id])));
+      await verwachtGeweigerd(alsGebruiker(u.id, (c) => c.query(`select public.admin_revoke_sessions($1)`, [B.id])));
+      await verwachtGeweigerd(alsGebruiker(u.id, (c) => c.query(`select public.admin_set_profile_active($1, false)`, [B.id])));
     }
+  });
+
+  it('admin_revoke_sessions verwijdert alle sessies van de gebruiker', async () => {
+    await beheer('insert into auth.sessions (user_id) values ($1), ($1)', [B.id]);
+    await beheer('select public.admin_revoke_sessions($1)', [B.id]);
+    const r = await beheer<{ n: number }>('select count(*)::int as n from auth.sessions where user_id = $1', [B.id]);
+    expect(r.rows[0]!.n).toBe(0);
   });
 });
 
@@ -448,6 +460,22 @@ describe('Gedeactiveerde gebruiker met geldig token', () => {
     });
   });
 
+  it('een login-e-mailadres dat afwijkt van het profiel geeft geen toegang', async () => {
+    // Bijvoorbeeld als iemand via Supabase Auth zelf zijn adres wijzigt naar een ander domein.
+    await beheer(`update auth.users set email = 'prive@gmail.com' where id = $1`, [A.id]);
+    try {
+      await alsGebruiker(A.id, async (c) => {
+        expect((await c.query('select 1 from public.tickets')).rowCount).toBe(0);
+        expect((await c.query('select 1 from public.profiles')).rowCount).toBe(0);
+        const r = await c.query<{ a: boolean }>('select public.has_access() as a');
+        expect(r.rows[0]!.a).toBe(false);
+      });
+    } finally {
+      await beheer('update auth.users set email = $2 where id = $1', [A.id, A.email]);
+    }
+    expect(await telTickets(A.id)).toBeGreaterThan(0);
+  });
+
   it('zijn tickets blijven bestaan en zichtbaar voor anderen', async () => {
     expect(await zietTicket(A.id, gedeactiveerdTicket.id)).toBe(true);
   });
@@ -496,9 +524,19 @@ describe('Tickets indienen', () => {
     }
   });
 
-  it('nummers: openbaar FIN-0000, vertrouwelijk FIN-V-0000, zonder dubbelingen bij gelijktijdige inzendingen', async () => {
+  it('vertrouwelijke nummers zijn willekeurig, zodat ze geen aantallen verraden', async () => {
+    const nummers = [];
+    for (let i = 0; i < 5; i++) nummers.push((await dienIn(A, { team: FIN, onderwerp: `Geheim ${i}`, vertrouwelijk: true })).number);
+    for (const n of nummers) expect(n).toMatch(/^FIN-V-[0-9A-F]{8}$/);
+    expect(new Set(nummers).size).toBe(5);
+    const getallen = nummers.map((n) => parseInt(n.slice(6), 16));
+    const opvolgend = getallen.every((g, i) => i === 0 || g === getallen[i - 1]! + 1);
+    expect(opvolgend).toBe(false);
+  });
+
+  it('nummers: openbaar FIN-0000, vertrouwelijk FIN-V-XXXXXXXX, zonder dubbelingen bij gelijktijdige inzendingen', async () => {
     expect(bOpenbaarFin.number).toMatch(/^FIN-\d{4}$/);
-    expect(bVertrouwelijkFin.number).toMatch(/^FIN-V-\d{4}$/);
+    expect(bVertrouwelijkFin.number).toMatch(/^FIN-V-[0-9A-F]{8}$/);
     expect(itOpenbaar.number).toMatch(/^IT-\d{4}$/);
 
     const aantal = 10;

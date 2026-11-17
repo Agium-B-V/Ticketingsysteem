@@ -32,7 +32,7 @@ export function MijnTicketsPagina() {
     e.preventDefault();
     setZoekFout(null);
     const nummer = zoek.trim().toUpperCase();
-    if (!/^[A-Z]{2,6}-(V-)?\d{4,}$/.test(nummer)) {
+    if (!/^[A-Z]{2,6}-(\d{4,}|V-[0-9A-F]{8})$/.test(nummer)) {
       setZoekFout('Vul een ticketnummer in, bijvoorbeeld FIN-0007.');
       return;
     }

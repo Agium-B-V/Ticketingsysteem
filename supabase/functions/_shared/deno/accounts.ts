@@ -65,7 +65,11 @@ export async function maakAccount(admin: SupabaseClient, invoer: NieuwAccount): 
     const { error: snapFout } = await admin.rpc('admin_snapshot_password', { p_user_id: userId });
     if (snapFout) throw snapFout;
   } catch (err) {
-    await admin.auth.admin.deleteUser(userId).catch(() => undefined);
+    const { error: terugdraaiFout } = await admin.auth.admin.deleteUser(userId).catch((e: unknown) => ({ error: e }));
+    if (terugdraaiFout) {
+      // Alleen de id, nooit e-mail of wachtwoord. Dit account moet handmatig worden opgeruimd.
+      console.error(`[accounts] terugdraaien mislukt voor user_id ${userId}`);
+    }
     throw err;
   }
 
@@ -89,5 +93,8 @@ export async function zetTijdelijkWachtwoord(admin: SupabaseClient, userId: stri
   if (error) throw error;
   const { error: snapFout } = await admin.rpc('admin_snapshot_password', { p_user_id: userId });
   if (snapFout) throw snapFout;
+  // Bestaande sessies intrekken: wie het oude wachtwoord of een sessie had, is eruit.
+  const { error: sessieFout } = await admin.rpc('admin_revoke_sessions', { p_user_id: userId });
+  if (sessieFout) throw sessieFout;
   return wachtwoord;
 }

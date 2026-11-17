@@ -6,7 +6,7 @@ Alles wat je zelf moet doen, in volgorde. Waar een opdracht staat, is het alleen
 
 1. **Pull request beoordelen.** Lees de PR-beschrijving en controleer dat de CI groen is. Vooral de job *RLS- en API-tests tegen lokale Supabase* moet slagen.
 2. **Regio controleren.** Supabase-dashboard > *Project Settings > General*: regio is **EU Central (Frankfurt)**.
-3. **Zelfregistratie uit.** *Authentication > Sign In / Providers*: zet **Allow new users to sign up** uit en **Allow anonymous sign-ins** uit.
+3. **Zelfregistratie uit.** *Authentication > Sign In / Providers*: zet **Allow new users to sign up** uit en **Allow anonymous sign-ins** uit. Laat bij **Email** de opties **Confirm email** en **Secure email change** **aan** staan, ook al gebruikt de pilot geen e-mail: zo kan niemand zelf zijn login-e-mailadres wijzigen. (De database weigert daarnaast toegang als het adres afwijkt van het profiel.)
 4. **Wachtwoordlengte.** *Authentication > Sign In / Providers > Email* (of *Policies*): **Minimum password length = 12**. Zet **Leaked password protection** aan als je plan dat toelaat.
 5. **URL's.** *Authentication > URL Configuration*: **Site URL** = `https://agium-b-v.github.io/Ticketingsysteem/` en dezelfde URL bij **Redirect URLs**. (Pas aan als de reponaam of organisatie anders is.)
 6. **Branchbeveiliging (aanrader).** GitHub > *Settings > Branches*: regel op `main` die een groene CI vereist.
