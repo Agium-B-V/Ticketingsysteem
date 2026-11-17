@@ -40,6 +40,20 @@ Alles wat je zelf moet doen, in volgorde. Waar een opdracht staat, is het alleen
 
 11. **Service-role key controleren.** *Edge Functions > Secrets*: `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_URL` en `SUPABASE_ANON_KEY` staan er automatisch. Zet de service-role key **nergens** anders neer: niet in GitHub, niet in de frontend en niet in een bestand.
 
+11a. **CORS controleren in productie.** Een vreemde origin hoort `403` te geven, zonder `Access-Control-Allow-Origin: *`:
+
+    ```bash
+    curl -s -i -X OPTIONS https://<project-ref>.supabase.co/functions/v1/admin-create-user -H "Origin: https://evil.example.org" -H "Access-Control-Request-Method: POST"
+    ```
+
+    En de eigen site hoort precies zijn eigen origin terug te krijgen:
+
+    ```bash
+    curl -s -i -X OPTIONS https://<project-ref>.supabase.co/functions/v1/admin-create-user -H "Origin: https://agium-b-v.github.io" -H "Access-Control-Request-Method: POST"
+    ```
+
+    Zie je bij de eerste toch `Access-Control-Allow-Origin: *`, meld het dan: dan voegt de Supabase-gateway die toe en is extra maatregel nodig. (Lokaal in CI doet de lokale gateway dat wel; daarom wordt de header-logica daar met unit-tests getest.)
+
 ## D. Eerste IT-admin
 
 12. *Authentication > Users > Add user > Create new user*: je eigen e-mailadres, een sterk wachtwoord (minimaal 12 tekens) en **Auto Confirm User** aan.

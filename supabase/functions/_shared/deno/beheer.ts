@@ -3,6 +3,7 @@
 
 import { createClient, type SupabaseClient } from 'npm:@supabase/supabase-js@2.119.0';
 import { parseOrigins } from '../logic/validatie.ts';
+import { corsVoor } from '../logic/cors.ts';
 
 export type Json = Record<string, unknown>;
 
@@ -12,27 +13,8 @@ export interface Context {
   admin: SupabaseClient;
 }
 
-const BASIS_HEADERS: Record<string, string> = {
-  'Content-Type': 'application/json; charset=utf-8',
-  'Cache-Control': 'no-store',
-  'X-Content-Type-Options': 'nosniff',
-  Vary: 'Origin',
-};
-
-function corsHeaders(origin: string | null): { toegestaan: boolean; headers: Record<string, string> } {
-  if (!origin) return { toegestaan: true, headers: { ...BASIS_HEADERS } };
-  const toegestaan = parseOrigins(Deno.env.get('ALLOWED_ORIGINS')).includes(origin);
-  if (!toegestaan) return { toegestaan: false, headers: { ...BASIS_HEADERS } };
-  return {
-    toegestaan: true,
-    headers: {
-      ...BASIS_HEADERS,
-      'Access-Control-Allow-Origin': origin,
-      'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-      'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Max-Age': '600',
-    },
-  };
+function corsHeaders(origin: string | null) {
+  return corsVoor(origin, parseOrigins(Deno.env.get('ALLOWED_ORIGINS')));
 }
 
 function antwoord(status: number, data: Json, headers: Record<string, string>): Response {

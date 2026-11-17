@@ -279,23 +279,17 @@ describe('Edge Functions: autorisatie', () => {
     expect(r.status).toBe(403);
   });
 
-  it('weigert een niet-toegestane origin en staat de ingestelde origin toe', async () => {
-    const EVIL = 'https://evil.example.org';
-    const fout = await roepAan('admin-create-user', {}, itAdmin.token, EVIL);
-    // Diagnose: welke CORS-headers komen terug (functie of lokale gateway)?
-    console.warn('CORS bij vreemde origin:', fout.status, JSON.stringify(Object.fromEntries(fout.headers)));
-    // De functie weigert de vreemde origin en geeft die nooit terug.
+  // De CORS-headers zelf zijn hier niet te testen: de lokale gateway (Kong) van
+  // `supabase start` beantwoordt preflights zelf en zet Access-Control-Allow-Origin
+  // op *. In productie doet de Supabase-gateway dat niet. De header-logica van de
+  // functie staat daarom in tests/unit/cors.test.ts; na deploy controleer je
+  // productie met de curl-opdracht uit docs/CHECKLIST-OPDRACHTGEVER.md.
+  it('weigert een niet-toegestane origin, ook met een geldig admin-token', async () => {
+    const fout = await roepAan('admin-create-user', { email: `x.${run}@example.com`, full_name: 'X' }, itAdmin.token, 'https://evil.example.org');
     expect(fout.status).toBe(403);
     expect(fout.json.fout).toBe('Origin niet toegestaan');
-    expect(fout.headers.get('access-control-allow-origin')).not.toBe(EVIL);
-
-    const pre = await fetch(`${FUNCTIES}/admin-create-user`, {
-      method: 'OPTIONS',
-      headers: { Origin: TOEGESTANE_ORIGIN, 'Access-Control-Request-Method': 'POST' },
-    });
-    console.warn('CORS bij toegestane origin:', pre.status, JSON.stringify(Object.fromEntries(pre.headers)));
-    expect(pre.headers.get('access-control-allow-origin')).toContain(TOEGESTANE_ORIGIN);
-    await pre.text();
+    const ok = await roepAan('admin-create-user', {}, itAdmin.token, TOEGESTANE_ORIGIN);
+    expect(ok.status).toBe(400); // toegestane origin komt door tot de invoervalidatie
   });
 });
 
