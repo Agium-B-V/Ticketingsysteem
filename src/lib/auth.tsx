@@ -1,5 +1,5 @@
 import type { Session } from '@supabase/supabase-js';
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { supabase } from './supabase';
 import type { Lidmaatschap, Profiel, Team } from './types';
 import { TEAM_KOLOMMEN } from './types';
@@ -63,22 +63,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [laden, setLaden] = useState(true);
   const [fout, setFout] = useState<string | null>(null);
 
+  // Gebruiker waarvan de gegevens nu geladen zijn. Bij een andere gebruiker (net
+  // ingelogd) tonen we het laadscherm tot profiel en rechten er zijn, zodat er
+  // niet kort "Geen toegang" verschijnt.
+  const geladenVoor = useRef<string | null>(null);
+
   const verwerk = useCallback(async (s: Session | null) => {
-    setSessie(s);
     if (!s) {
+      geladenVoor.current = null;
+      setSessie(null);
       setGegevens(LEEG);
+      setFout(null);
       setLaden(false);
       return;
     }
+    if (geladenVoor.current !== s.user.id) setLaden(true);
+    let nieuweGegevens: Gegevens = LEEG;
+    let nieuweFout: string | null = null;
     try {
-      setGegevens(await laadGegevens(s.user.id));
-      setFout(null);
+      nieuweGegevens = await laadGegevens(s.user.id);
     } catch (e) {
-      setFout(e instanceof Error ? e.message : 'Kon je gegevens niet laden');
-      setGegevens(LEEG);
-    } finally {
-      setLaden(false);
+      nieuweFout = e instanceof Error ? e.message : 'Kon je gegevens niet laden';
     }
+    // Sessie, gegevens en status in één keer bijwerken.
+    geladenVoor.current = s.user.id;
+    setSessie(s);
+    setGegevens(nieuweGegevens);
+    setFout(nieuweFout);
+    setLaden(false);
   }, []);
 
   useEffect(() => {
@@ -90,8 +102,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!actief) return;
       // Supabase raadt aan geen andere Supabase-aanroepen synchroon in deze callback te doen.
       if (event === 'SIGNED_IN' || event === 'SIGNED_OUT' || event === 'USER_UPDATED') {
+        // Laadscherm meteen tonen bij een nieuwe gebruiker; laden gebeurt net daarna.
+        if (s && geladenVoor.current !== s.user.id) setLaden(true);
         setTimeout(() => void verwerk(s), 0);
-      } else {
+      } else if (s && geladenVoor.current === s.user.id) {
+        // Bijvoorbeeld TOKEN_REFRESHED: alleen het nieuwe token overnemen.
         setSessie(s);
       }
     });

@@ -28,3 +28,6 @@ supabase/.branches/
 Thumbs.db
 desktop.ini
 *.log
+
+# Eenmalig handmatig toe te passen SQL (bevat alleen migraties)
+TOEPASSEN-in-SQL-editor.sql
