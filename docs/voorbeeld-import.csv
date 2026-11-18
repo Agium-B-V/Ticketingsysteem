@@ -1,7 +1,0 @@
-naam,email,team,rol
-Test Medewerker Een,test.medewerker.een@example.com,,
-Test Medewerker Twee,test.medewerker.twee@example.com,,
-Test Behandelaar Finance,test.behandelaar.finance@example.com,FIN,handler
-Test Admin Finance,test.admin.finance@example.com,FIN,admin
-Test Behandelaar IT,test.behandelaar.it@example.com,IT,handler
-Test Behandelaar HR,test.behandelaar.hr@example.com,HR,handler
