@@ -249,6 +249,86 @@ describe('Handlers en teams', () => {
   });
 });
 
+describe('Verantwoordelijke behandelaar', () => {
+  it('team_behandelaars geeft de actieve handlers en admins van het team, alleen aan teamleden', async () => {
+    const lijst = await alsGebruiker(finHandler.id, async (c) =>
+      (await c.query<{ user_id: string; role: string }>(`select user_id, role from public.team_behandelaars($1)`, [FIN])).rows,
+    );
+    const ids = lijst.map((r) => r.user_id);
+    expect(ids).toContain(finHandler.id);
+    expect(ids).toContain(finAdmin.id);
+    expect(ids).not.toContain(itHandler.id);
+    expect(ids).not.toContain(A.id);
+
+    for (const u of [A, B, itHandler, itAdmin, gedeactiveerd, nieuw]) {
+      const r = await alsGebruiker(u.id, (c) => c.query(`select * from public.team_behandelaars($1)`, [FIN]));
+      expect(r.rowCount).toBe(0);
+    }
+    await verwachtGeweigerd(alsAnon((c) => c.query(`select * from public.team_behandelaars($1)`, [FIN])));
+  });
+
+  it('een handler of admin kan een teamgenoot kiezen; de naam komt uit het profiel', async () => {
+    for (const [wie, kies] of [
+      [finHandler, finAdmin],
+      [finAdmin, finHandler],
+    ] as const) {
+      await alsGebruiker(wie.id, async (c) => {
+        const r = await c.query<{ assignee_id: string; assignee_name: string }>(
+          `update public.tickets set assignee_id = $2 where id = $1 returning assignee_id, assignee_name`,
+          [bVertrouwelijkFin.id, kies.id],
+        );
+        expect(r.rows[0]).toEqual({ assignee_id: kies.id, assignee_name: kies.naam });
+        const leeg = await c.query<{ assignee_name: string | null }>(
+          `update public.tickets set assignee_id = null where id = $1 returning assignee_name`,
+          [bVertrouwelijkFin.id],
+        );
+        expect(leeg.rows[0]!.assignee_name).toBeNull();
+      });
+    }
+  });
+
+  it('alleen actieve leden van het eigen team kunnen verantwoordelijke worden', async () => {
+    for (const ander of [itHandler, A, gedeactiveerd]) {
+      await verwachtGeweigerd(
+        alsGebruiker(finHandler.id, (c) =>
+          c.query(`update public.tickets set assignee_id = $2 where id = $1`, [bOpenbaarFin.id, ander.id]),
+        ),
+      );
+    }
+  });
+
+  it('assignee_name is niet zelf te zetten', async () => {
+    await verwachtGeweigerd(
+      alsGebruiker(finHandler.id, (c) => c.query(`update public.tickets set assignee_name = 'Nep' where id = $1`, [bOpenbaarFin.id])),
+    );
+  });
+
+  it('een indiener of collega kan geen verantwoordelijke kiezen', async () => {
+    await verwachtGeweigerd(
+      alsGebruiker(B.id, (c) => c.query(`update public.tickets set assignee_id = $2 where id = $1`, [bOpenbaarFin.id, finHandler.id])),
+    );
+    await alsGebruiker(A.id, async (c) => {
+      const r = await c.query(`update public.tickets set assignee_id = $2 where id = $1`, [bOpenbaarFin.id, finHandler.id]);
+      expect(r.rowCount).toBe(0);
+    });
+    await alsGebruiker(itAdmin.id, async (c) => {
+      const r = await c.query(`update public.tickets set assignee_id = $2 where id = $1`, [bOpenbaarFin.id, finHandler.id]);
+      expect(r.rowCount).toBe(0);
+    });
+  });
+
+  it('bij indienen is er geen verantwoordelijke', async () => {
+    await verwachtGeweigerd(
+      alsGebruiker(A.id, (c) =>
+        c.query(
+          `insert into public.tickets (team_id, submitter_name, subject, description, assignee_id) values ($1, 'x', 'x', 'x', $2)`,
+          [FIN, finHandler.id],
+        ),
+      ),
+    );
+  });
+});
+
 describe('Beheer: alleen IT-admins', () => {
   it('alleen een IT-admin kan een team aanmaken', async () => {
     for (const u of [A, finHandler, finAdmin, itHandler]) {

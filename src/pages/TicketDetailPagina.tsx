@@ -7,12 +7,13 @@ import { teamNaam, useAuth } from '../lib/auth';
 import { datumTijd, foutTekst, PRIORITEIT_LABEL, PRIORITEITEN, STATUS_LABEL, STATUSSEN } from '../lib/format';
 import { useData, useTicketUpdates } from '../lib/hooks';
 import { ok, supabase } from '../lib/supabase';
-import type { Prioriteit, Reactie, Status, Ticket } from '../lib/types';
+import type { Behandelaar, Prioriteit, Reactie, Status, Ticket } from '../lib/types';
 
 interface Gegevens {
   ticket: Ticket | null;
   reacties: Reactie[];
   indienerEmail: string | null;
+  behandelaars: Behandelaar[];
 }
 
 export function TicketDetailPagina() {
@@ -22,7 +23,7 @@ export function TicketDetailPagina() {
 
   const data = useData<Gegevens>(async () => {
     const t = ok(await supabase.from('tickets').select('*').eq('number', nr).maybeSingle()) as Ticket | null;
-    if (!t) return { ticket: null, reacties: [], indienerEmail: null };
+    if (!t) return { ticket: null, reacties: [], indienerEmail: null, behandelaars: [] };
     const magGesprek = handlerTeams.has(t.team_id) || t.submitter_id === profiel?.id;
     const reacties = magGesprek
       ? (ok(
@@ -34,11 +35,16 @@ export function TicketDetailPagina() {
         ) as Reactie[])
       : [];
     let indienerEmail: string | null = null;
+    let behandelaars: Behandelaar[] = [];
     if (handlerTeams.has(t.team_id)) {
-      const p = await supabase.from('profiles').select('email').eq('id', t.submitter_id).maybeSingle();
+      const [p, b] = await Promise.all([
+        supabase.from('profiles').select('email').eq('id', t.submitter_id).maybeSingle(),
+        supabase.rpc('team_behandelaars', { p_team_id: t.team_id }),
+      ]);
       indienerEmail = (p.data?.email as string | undefined) ?? null;
+      behandelaars = ok(b) as Behandelaar[];
     }
-    return { ticket: t, reacties, indienerEmail };
+    return { ticket: t, reacties, indienerEmail, behandelaars };
   }, `ticket-${nr}-${[...handlerTeams].join(',')}`);
   useTicketUpdates(data.herlaad);
 
@@ -119,6 +125,8 @@ export function TicketDetailPagina() {
                   </>
                 )}
               </dd>
+              <dt>Verantwoordelijke</dt>
+              <dd>{ticket.assignee_name ?? <span className="muted">Nog niet toegewezen</span>}</dd>
               <dt>Ingediend</dt>
               <dd>
                 <time dateTime={ticket.created_at}>{datumTijd(ticket.created_at)}</time>
@@ -138,7 +146,9 @@ export function TicketDetailPagina() {
             </dl>
           </Kaart>
 
-          {isHandler && <Behandelen key={ticket.updated_at} ticket={ticket} naOpslaan={data.herlaad} />}
+          {isHandler && (
+            <Behandelen key={ticket.updated_at} ticket={ticket} behandelaars={data.data?.behandelaars ?? []} naOpslaan={data.herlaad} />
+          )}
           {isIndiener && !isHandler && ticket.status === 'open' && <Annuleren ticket={ticket} naAnnuleren={data.herlaad} />}
         </div>
       </div>
@@ -146,18 +156,35 @@ export function TicketDetailPagina() {
   );
 }
 
-function Behandelen({ ticket, naOpslaan }: { ticket: Ticket; naOpslaan: () => void }) {
+function Behandelen({
+  ticket,
+  behandelaars,
+  naOpslaan,
+}: {
+  ticket: Ticket;
+  behandelaars: Behandelaar[];
+  naOpslaan: () => void;
+}) {
   const [status, setStatus] = useState<Status>(ticket.status);
   const [prioriteit, setPrioriteit] = useState<Prioriteit>(ticket.priority);
+  const [verantwoordelijke, setVerantwoordelijke] = useState<string>(ticket.assignee_id ?? '');
   const [bezig, setBezig] = useState(false);
   const [melding, setMelding] = useState<{ soort: 'positief' | 'aandacht'; tekst: string } | null>(null);
-  const gewijzigd = status !== ticket.status || prioriteit !== ticket.priority;
+  const gewijzigd =
+    status !== ticket.status || prioriteit !== ticket.priority || verantwoordelijke !== (ticket.assignee_id ?? '');
+  // Een eerder gekozen verantwoordelijke die geen actief teamlid meer is, blijft zichtbaar als keuze.
+  const oudeVerantwoordelijke =
+    ticket.assignee_id && !behandelaars.some((b) => b.user_id === ticket.assignee_id) ? ticket.assignee_id : null;
 
   async function opslaan(e: FormEvent) {
     e.preventDefault();
     setBezig(true);
     setMelding(null);
-    const { data, error } = await supabase.from('tickets').update({ status, priority: prioriteit }).eq('id', ticket.id).select('id');
+    const { data, error } = await supabase
+      .from('tickets')
+      .update({ status, priority: prioriteit, assignee_id: verantwoordelijke || null })
+      .eq('id', ticket.id)
+      .select('id');
     setBezig(false);
     if (error || !data || data.length === 0) {
       setMelding({ soort: 'aandacht', tekst: error ? foutTekst(error) : 'Opslaan is niet gelukt. Je hebt mogelijk geen rechten meer.' });
@@ -172,6 +199,18 @@ function Behandelen({ ticket, naOpslaan }: { ticket: Ticket; naOpslaan: () => vo
       <form className="stapel" onSubmit={opslaan}>
         <h2 id="behandelen-titel">Behandelen</h2>
         {melding && <Melding variant={melding.soort}>{melding.tekst}</Melding>}
+        <Keuzelijst label="Verantwoordelijke" value={verantwoordelijke} onChange={(e) => setVerantwoordelijke(e.target.value)}>
+          <option value="">Nog niet toegewezen</option>
+          {oudeVerantwoordelijke && (
+            <option value={oudeVerantwoordelijke}>{ticket.assignee_name} (geen actief teamlid meer)</option>
+          )}
+          {behandelaars.map((b) => (
+            <option key={b.user_id} value={b.user_id}>
+              {b.full_name}
+              {b.role === 'admin' ? ' (admin)' : ''}
+            </option>
+          ))}
+        </Keuzelijst>
         <Keuzelijst label="Status" value={status} onChange={(e) => setStatus(e.target.value as Status)}>
           {STATUSSEN.map((s) => (
             <option key={s} value={s}>
