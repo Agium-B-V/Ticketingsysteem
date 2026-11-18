@@ -1,7 +1,7 @@
 import { ArrowDown, ArrowUp, Inbox } from 'lucide-react';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { teamNaam } from '../lib/auth';
+import { teamNaam, useAuth } from '../lib/auth';
 import { datum, datumTijd, PRIORITEIT_GEWICHT, PRIORITEIT_LABEL, PRIORITEITEN, STATUS_LABEL, STATUSSEN } from '../lib/format';
 import type { Prioriteit, Status, Team, TicketRij } from '../lib/types';
 import { PrioriteitBadge, StatusBadge, VertrouwelijkBadge } from './TicketBadges';
@@ -15,13 +15,26 @@ interface Props {
   titel: string;
   legeTekst: string;
   toonBijgewerkt?: boolean;
+  /** Kolom en filter voor de verantwoordelijke behandelaar (dashboard). */
+  toonVerantwoordelijke?: boolean;
   /** Teams waarvan de gebruiker behandelaar is; andere tickets krijgen het label Alleen lezen. */
   handlerTeams?: Set<string>;
   standaardStatus?: Status | '';
 }
 
-export function TicketLijst({ tickets, teams, titel, legeTekst, toonBijgewerkt, handlerTeams, standaardStatus = '' }: Props) {
+export function TicketLijst({
+  tickets,
+  teams,
+  titel,
+  legeTekst,
+  toonBijgewerkt,
+  toonVerantwoordelijke,
+  handlerTeams,
+  standaardStatus = '',
+}: Props) {
+  const { profiel } = useAuth();
   const [team, setTeam] = useState('');
+  const [verantwoordelijke, setVerantwoordelijke] = useState<'' | 'mij' | 'niemand'>('');
   const [status, setStatus] = useState<Status | ''>(standaardStatus);
   const [prioriteit, setPrioriteit] = useState<Prioriteit | ''>('');
   const [sorteer, setSorteer] = useState<SorteerOp>(toonBijgewerkt ? 'updated_at' : 'created_at');
@@ -34,7 +47,12 @@ export function TicketLijst({ tickets, teams, titel, legeTekst, toonBijgewerkt, 
 
   const gefilterd = useMemo(() => {
     const lijst = tickets.filter(
-      (t) => (!team || t.team_id === team) && (!status || t.status === status) && (!prioriteit || t.priority === prioriteit),
+      (t) =>
+        (!team || t.team_id === team) &&
+        (!status || t.status === status) &&
+        (!prioriteit || t.priority === prioriteit) &&
+        (verantwoordelijke !== 'mij' || t.assignee_id === profiel?.id) &&
+        (verantwoordelijke !== 'niemand' || t.assignee_id === null),
     );
     const factor = oplopend ? 1 : -1;
     return [...lijst].sort((a, b) => {
@@ -44,7 +62,7 @@ export function TicketLijst({ tickets, teams, titel, legeTekst, toonBijgewerkt, 
           : a[sorteer].localeCompare(b[sorteer]);
       return v * factor || b.created_at.localeCompare(a.created_at);
     });
-  }, [tickets, team, status, prioriteit, sorteer, oplopend]);
+  }, [tickets, team, status, prioriteit, verantwoordelijke, profiel?.id, sorteer, oplopend]);
 
   const wisselSortering = (op: SorteerOp) => {
     if (op === sorteer) setOplopend((o) => !o);
@@ -92,6 +110,17 @@ export function TicketLijst({ tickets, teams, titel, legeTekst, toonBijgewerkt, 
             </option>
           ))}
         </Keuzelijst>
+        {toonVerantwoordelijke && (
+          <Keuzelijst
+            label="Verantwoordelijke"
+            value={verantwoordelijke}
+            onChange={(e) => setVerantwoordelijke(e.target.value as '' | 'mij' | 'niemand')}
+          >
+            <option value="">Iedereen</option>
+            <option value="mij">Aan mij toegewezen</option>
+            <option value="niemand">Nog niet toegewezen</option>
+          </Keuzelijst>
+        )}
         <Keuzelijst
           label="Sorteren op"
           value={`${sorteer}:${oplopend ? 'op' : 'af'}`}
@@ -130,6 +159,7 @@ export function TicketLijst({ tickets, teams, titel, legeTekst, toonBijgewerkt, 
                     <th>Team</th>
                     {sorteerKop('priority', 'Prioriteit')}
                     <th>Status</th>
+                    {toonVerantwoordelijke && <th>Verantwoordelijke</th>}
                     {sorteerKop('created_at', 'Ingediend')}
                     {toonBijgewerkt && sorteerKop('updated_at', 'Bijgewerkt')}
                   </tr>
@@ -156,6 +186,7 @@ export function TicketLijst({ tickets, teams, titel, legeTekst, toonBijgewerkt, 
                       <td>
                         <StatusBadge status={t.status} />
                       </td>
+                      {toonVerantwoordelijke && <td className={t.assignee_name ? undefined : 'muted'}>{t.assignee_name ?? '–'}</td>}
                       <td className="muted">
                         <time dateTime={t.created_at}>{datum(t.created_at)}</time>
                       </td>
@@ -180,6 +211,7 @@ export function TicketLijst({ tickets, teams, titel, legeTekst, toonBijgewerkt, 
                     <strong style={{ color: 'var(--agium-navy)' }}>{t.subject}</strong>
                     <span className="rij" style={{ gap: 'var(--space-2)' }}>
                       <span className="muted klein">{teamNaam(teams, t.team_id)}</span>
+                      {toonVerantwoordelijke && t.assignee_name && <span className="muted klein">{t.assignee_name}</span>}
                       <StatusBadge status={t.status} />
                       <PrioriteitBadge prioriteit={t.priority} />
                       {t.confidential && <VertrouwelijkBadge />}

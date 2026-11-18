@@ -40,6 +40,16 @@ export interface Ticket {
   created_at: string;
   updated_at: string;
   closed_at: string | null;
+  /** Verantwoordelijke behandelaar; de naam zet de database zelf. */
+  assignee_id: string | null;
+  assignee_name: string | null;
+}
+
+/** Actieve behandelaar of admin van een team (rpc team_behandelaars). */
+export interface Behandelaar {
+  user_id: string;
+  full_name: string;
+  role: TeamRol;
 }
 
 export type TicketRij = Omit<Ticket, 'description'>;
@@ -61,6 +71,6 @@ export interface Telling {
 }
 
 export const TICKET_KOLOMMEN =
-  'id, number, team_id, submitter_id, submitter_name, subject, priority, confidential, status, created_at, updated_at, closed_at';
+  'id, number, team_id, submitter_id, submitter_name, subject, priority, confidential, status, created_at, updated_at, closed_at, assignee_id, assignee_name';
 
 export const TEAM_KOLOMMEN = 'id, name, prefix, active, is_admin_team, created_at';

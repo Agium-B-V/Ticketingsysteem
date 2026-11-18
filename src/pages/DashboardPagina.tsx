@@ -73,6 +73,7 @@ export function DashboardPagina() {
             titel="Tickets voor behandelaars"
             legeTekst="Er zijn nog geen tickets voor je teams."
             toonBijgewerkt
+            toonVerantwoordelijke
             handlerTeams={handlerTeams}
           />
         </>
